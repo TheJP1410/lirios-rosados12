@@ -13,14 +13,15 @@ const ThreeScene: React.FC<ThreeSceneProps> = ({ text }) => {
 
     // --- Scene Setup ---
     const scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x020617); // slate-950 matching the app theme
-    scene.fog = new THREE.Fog(0x020617, 20, 80);
+    // A deep, romantic purple-slate background to match the pink lily vibe
+    scene.background = new THREE.Color(0x1a0b2e); 
+    scene.fog = new THREE.Fog(0x1a0b2e, 15, 90);
 
     const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
     camera.position.set(0, 8, 25);
     camera.lookAt(0, 6, 0);
 
-    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
     renderer.setSize(window.innerWidth, window.innerHeight);
     renderer.setPixelRatio(window.devicePixelRatio);
     renderer.shadowMap.enabled = true;
@@ -30,97 +31,111 @@ const ThreeScene: React.FC<ThreeSceneProps> = ({ text }) => {
     const ambientLight = new THREE.AmbientLight(0xffffff, 0.3);
     scene.add(ambientLight);
 
-    const dirLight = new THREE.DirectionalLight(0xffd700, 0.8); // Golden sunlight
+    // Warm Sunlight
+    const dirLight = new THREE.DirectionalLight(0xffd700, 1.2);
     dirLight.position.set(10, 20, 10);
     dirLight.castShadow = true;
+    dirLight.shadow.mapSize.width = 2048;
+    dirLight.shadow.mapSize.height = 2048;
     scene.add(dirLight);
 
-    const pinkLight = new THREE.PointLight(0xd946ef, 2, 30); // Fuchsia glow from within
-    pinkLight.position.set(0, 5, 0);
+    // Pink Atmospheric Light (Stronger now)
+    const pinkLight = new THREE.PointLight(0xff00cc, 3, 60);
+    pinkLight.position.set(0, 15, -10);
     scene.add(pinkLight);
 
     // --- Ground ---
-    const groundGeo = new THREE.PlaneGeometry(100, 100);
+    const groundGeo = new THREE.PlaneGeometry(200, 200);
     const groundMat = new THREE.MeshStandardMaterial({ 
-        color: 0x0f172a, // Dark slate
-        roughness: 0.9,
-        metalness: 0.1
+        color: 0x1f1033, // Dark purple ground
+        roughness: 0.7,
+        metalness: 0.2
     });
     const ground = new THREE.Mesh(groundGeo, groundMat);
     ground.rotation.x = -Math.PI / 2;
     ground.receiveShadow = true;
     scene.add(ground);
 
-    // --- Geometry Reuse ---
-    // Stem: Cylinder
-    const stemGeo = new THREE.CylinderGeometry(0.1, 0.15, 1, 8);
-    stemGeo.translate(0, 0.5, 0); // Pivot at bottom
-    const stemMat = new THREE.MeshStandardMaterial({ color: 0x15803d, roughness: 0.8 }); // green-700
-
-    // Petal: Flattened Cone/Pyramid to look like a lily petal
-    // Stargazer shape: wide in middle, pointed tip.
-    // We simulate this with a scaled cone.
-    const petalGeo = new THREE.ConeGeometry(0.6, 2.5, 8);
-    petalGeo.translate(0, 1.25, 0); // Pivot at base
-    petalGeo.scale(1, 1, 0.15); // Flatten Z axis
+    // ==========================================
+    // SHARED GEOMETRY & MATERIALS (Optimization)
+    // ==========================================
     
-    // Stargazer Pink Color
+    // Stem
+    const stemGeo = new THREE.CylinderGeometry(0.08, 0.12, 1, 8);
+    stemGeo.translate(0, 0.5, 0);
+    const stemMat = new THREE.MeshStandardMaterial({ color: 0x15803d, roughness: 0.8 });
+
+    // Petal (Stargazer Shape - Wide and pointy)
+    const petalGeo = new THREE.ConeGeometry(0.6, 2.5, 8);
+    petalGeo.translate(0, 1.25, 0);
+    petalGeo.scale(1, 1, 0.15); // Flatten
+    
     const petalMat = new THREE.MeshStandardMaterial({
-        color: 0xe879f9, // fuchsia-400
-        emissive: 0xbe185d, // pink-700
+        color: 0xe879f9, 
+        emissive: 0xbe185d,
         emissiveIntensity: 0.3,
         roughness: 0.4,
         metalness: 0.1,
         side: THREE.DoubleSide
     });
 
-    // Pistil (Center part)
+    // Pistil
     const pistilGeo = new THREE.CylinderGeometry(0.03, 0.03, 1.8, 5);
     pistilGeo.translate(0, 0.9, 0);
-    const pistilMat = new THREE.MeshBasicMaterial({ color: 0xfde047 }); // yellow-300
+    const pistilMat = new THREE.MeshBasicMaterial({ color: 0xfde047 });
 
-    // --- Flower Creation ---
-    const flowers: any[] = [];
-    
-    const createFlower = (totalHeight: number, delay: number, x: number, z: number) => {
-        const group = new THREE.Group() as any;
-        group.position.set(x, 0, z);
-
-        // Stem
-        const stem = new THREE.Mesh(stemGeo, stemMat);
-        stem.scale.y = 0.01; // Start tiny
-        stem.castShadow = true;
-        stem.receiveShadow = true;
-        group.add(stem);
-
-        // Head Group
+    // Helper to create a Lily Head (Used for both Bouquet and Rain)
+    const createLilyHead = (isOpen: boolean) => {
         const head = new THREE.Group();
-        head.position.y = 0;
-        group.add(head);
-
-        // Petals
-        const petals: THREE.Mesh[] = [];
         const numPetals = 6;
+        
+        // Petals
         for(let i=0; i<numPetals; i++) {
             const petal = new THREE.Mesh(petalGeo, petalMat);
             const angle = (Math.PI * 2 / numPetals) * i;
-            
-            // Orient petal
             petal.rotation.y = angle;
-            // Initial closed state: nearly vertical
-            petal.rotation.z = 0.1; 
+            // If it's for rain, start fully open. If bouquet, start closed (handled in animation)
+            petal.rotation.z = isOpen ? Math.PI / 3.2 : 0.1; 
+            
+            // Add a subtle curve to the petal tip if possible via rotation
+            // (Not changing geometry, but we can rotate x a bit more for flair)
             
             head.add(petal);
-            petals.push(petal);
         }
 
         // Pistils
         for(let j=0; j<3; j++) {
             const pistil = new THREE.Mesh(pistilGeo, pistilMat);
-            pistil.rotation.x = (Math.random() - 0.5) * 0.5;
-            pistil.rotation.z = (Math.random() - 0.5) * 0.5;
+            pistil.rotation.x = (Math.random() - 0.5) * 0.4;
+            pistil.rotation.z = (Math.random() - 0.5) * 0.4;
             head.add(pistil);
         }
+        return head;
+    };
+
+    // ==========================================
+    // 1. MAIN BOUQUET
+    // ==========================================
+    const flowers: any[] = [];
+
+    const createFlowerInstance = (totalHeight: number, delay: number, x: number, z: number) => {
+        const group = new THREE.Group() as any;
+        group.position.set(x, 0, z);
+
+        // Stem
+        const stem = new THREE.Mesh(stemGeo, stemMat);
+        stem.scale.y = 0.01; 
+        stem.castShadow = true;
+        stem.receiveShadow = true;
+        group.add(stem);
+
+        // Head
+        const head = createLilyHead(false); // Start closed
+        head.position.y = 0;
+        group.add(head);
+
+        // Store references for animation
+        const petals = head.children.filter(c => (c as THREE.Mesh).geometry === petalGeo);
 
         group.userData = {
             totalHeight,
@@ -136,32 +151,75 @@ const ThreeScene: React.FC<ThreeSceneProps> = ({ text }) => {
         return group;
     };
 
-    // --- Instantiate Bouquet ---
-    const count = 40;
-    for(let i=0; i<count; i++) {
+    // Create Bouquet
+    const bouquetCount = 45;
+    for(let i=0; i<bouquetCount; i++) {
         const angle = Math.random() * Math.PI * 2;
-        // Cluster them nicely
-        const radius = Math.sqrt(Math.random()) * 12; 
+        // Distribution: Dense center, sparse edge
+        const rRand = Math.random();
+        const radius = (rRand * rRand) * 12; 
         const x = Math.cos(angle) * radius;
         const z = Math.sin(angle) * radius;
-
-        const h = 10 + Math.random() * 8; // Height
-        const d = Math.random() * 3.5; // Delay
-
-        flowers.push(createFlower(h, d, x, z));
+        
+        const h = 9 + Math.random() * 6; // Varied height
+        const d = Math.random() * 3; // Random start delay
+        
+        flowers.push(createFlowerInstance(h, d, x, z));
     }
 
-    // --- Particles (Fireflies/Pollen) ---
+    // ==========================================
+    // 2. FALLING LILY RAIN (UPDATED)
+    // ==========================================
+    const rainLilies: THREE.Group[] = [];
+    const rainCount = 100; // Increased density "que llueva asi"
+
+    const createRainLily = () => {
+        const g = createLilyHead(true); // Fully open
+        
+        // Random Start Position
+        g.position.set(
+            (Math.random() - 0.5) * 80,      // Wide X
+            20 + Math.random() * 60,         // High Y
+            (Math.random() - 0.5) * 40 - 10  // Z depth (behind and around)
+        );
+        
+        // Random Rotation
+        g.rotation.set(Math.random()*Math.PI, Math.random()*Math.PI, Math.random()*Math.PI);
+
+        // Random Scale (some smaller, some normal)
+        const scale = 0.6 + Math.random() * 0.4;
+        g.scale.set(scale, scale, scale);
+
+        g.userData = {
+            fallSpeed: 0.05 + Math.random() * 0.1,
+            rotVel: {
+                x: (Math.random() - 0.5) * 0.02,
+                y: (Math.random() - 0.5) * 0.02,
+                z: (Math.random() - 0.5) * 0.02
+            }
+        };
+        scene.add(g);
+        return g;
+    };
+
+    for(let i=0; i<rainCount; i++) {
+        rainLilies.push(createRainLily());
+    }
+
+    // ==========================================
+    // 3. PARTICLES
+    // ==========================================
     const pCount = 300;
     const pGeo = new THREE.BufferGeometry();
     const pPos = new Float32Array(pCount * 3);
     for(let i=0; i<pCount*3; i++) {
-        pPos[i] = (Math.random() - 0.5) * 40;
-        if(i % 3 === 1) pPos[i] = Math.random() * 20; // Y range 0-20
+        pPos[i] = (Math.random() - 0.5) * 80;
+        pPos[i+1] = Math.random() * 40;
+        pPos[i+2] = (Math.random() - 0.5) * 60;
     }
     pGeo.setAttribute('position', new THREE.BufferAttribute(pPos, 3));
     const pMat = new THREE.PointsMaterial({
-        color: 0xfff7ed, // orange-50
+        color: 0xffaaff, 
         size: 0.15,
         transparent: true,
         opacity: 0.6,
@@ -169,6 +227,7 @@ const ThreeScene: React.FC<ThreeSceneProps> = ({ text }) => {
     });
     const particles = new THREE.Points(pGeo, pMat);
     scene.add(particles);
+
 
     // --- Animation Loop ---
     const clock = new THREE.Clock();
@@ -178,62 +237,69 @@ const ThreeScene: React.FC<ThreeSceneProps> = ({ text }) => {
         reqId = requestAnimationFrame(animate);
         const time = clock.getElapsedTime();
 
-        // Animate Flowers
+        // 1. Animate Bouquet
         flowers.forEach(flower => {
             const { totalHeight, delay, stem, head, petals, swaySpeed, swayOffset } = flower.userData;
-            
             if (time > delay) {
                 const age = time - delay;
-                
-                // Growth Phase (Logarithmic ease out for "shooting up" effect)
-                const growDuration = 3;
+                const growDuration = 3.5;
                 const growProgress = Math.min(age / growDuration, 1);
-                // cubic ease out
-                const growth = 1 - Math.pow(1 - growProgress, 3); 
+                const growth = 1 - Math.pow(1 - growProgress, 3); // Ease Out Cubic
 
+                // Stem Growth
                 const currentH = growth * totalHeight;
-                stem.scale.y = Math.max(0.1, currentH);
+                stem.scale.y = Math.max(0.01, currentH);
                 head.position.y = currentH;
 
-                // Blooming Phase (Starts after growth is halfway)
-                if (growProgress > 0.3) {
-                    const bloomDuration = 2;
-                    const bloomAge = Math.min((age - (growDuration * 0.3)) / bloomDuration, 1);
+                // Petal Bloom
+                // Start opening at 20% growth
+                if (growProgress > 0.2) {
+                    const bloomAge = Math.min((age - (growDuration * 0.2)) / 2, 1);
                     const bloom = 1 - Math.pow(1 - bloomAge, 3);
-
+                    
+                    const startAngle = 0.1;
+                    const endAngle = Math.PI / 3.2;
+                    
                     petals.forEach((petal: THREE.Mesh) => {
-                        // Target rotation for open flower: ~60 degrees (PI/3)
-                        const startRot = 0.1;
-                        const endRot = Math.PI / 3.5; 
-                        // Rotate Z is the "opening" axis for our cone oriented Y-up
-                        petal.rotation.z = startRot + (endRot - startRot) * bloom;
+                        petal.rotation.z = startAngle + (endAngle - startAngle) * bloom;
                     });
                 }
 
                 // Wind Sway
                 if (growProgress > 0.8) {
-                    const sway = Math.sin(time * swaySpeed + swayOffset) * 0.1;
-                    flower.rotation.z = sway;
-                    flower.rotation.x = Math.cos(time * swaySpeed * 0.7) * 0.05;
+                    const wind = Math.sin(time * swaySpeed + swayOffset) * 0.05;
+                    const turbulence = Math.cos(time * swaySpeed * 1.3) * 0.02;
+                    flower.rotation.z = wind + turbulence;
+                    flower.rotation.x = turbulence;
                 }
             }
         });
 
-        // Animate Particles
-        particles.rotation.y = time * 0.05;
-        const positions = particles.geometry.attributes.position.array as Float32Array;
-        for(let i=1; i<positions.length; i+=3) {
-            positions[i] += 0.02; // float up
-            if(positions[i] > 20) positions[i] = 0; // reset
-        }
-        particles.geometry.attributes.position.needsUpdate = true;
+        // 2. Animate Rain
+        rainLilies.forEach(lily => {
+            lily.position.y -= lily.userData.fallSpeed;
+            
+            // Tumble
+            lily.rotation.x += lily.userData.rotVel.x;
+            lily.rotation.y += lily.userData.rotVel.y;
+            lily.rotation.z += lily.userData.rotVel.z;
+
+            // Reset if too low
+            if(lily.position.y < -5) {
+                lily.position.y = 35 + Math.random() * 10;
+                lily.position.x = (Math.random() - 0.5) * 80;
+                lily.position.z = (Math.random() - 0.5) * 40 - 10;
+            }
+        });
+
+        // 3. Particles
+        particles.rotation.y = time * 0.03;
 
         renderer.render(scene, camera);
     };
 
     animate();
 
-    // --- Resize Handler ---
     const handleResize = () => {
         const w = window.innerWidth;
         const h = window.innerHeight;
@@ -243,31 +309,32 @@ const ThreeScene: React.FC<ThreeSceneProps> = ({ text }) => {
     };
     window.addEventListener('resize', handleResize);
 
-    // Cleanup
     return () => {
         cancelAnimationFrame(reqId);
         window.removeEventListener('resize', handleResize);
         if (mountRef.current) {
             mountRef.current.removeChild(renderer.domElement);
         }
-        // Optional: dispose geometries/materials
+        // Dispose
         stemGeo.dispose(); stemMat.dispose();
         petalGeo.dispose(); petalMat.dispose();
+        pistilGeo.dispose(); pistilMat.dispose();
         groundGeo.dispose(); groundMat.dispose();
+        pGeo.dispose(); pMat.dispose();
     };
-  }, []);
+  }, [text]);
 
   return (
     <div className="relative w-full h-full">
-      <div ref={mountRef} className="absolute inset-0" />
+      <div ref={mountRef} className="absolute inset-0 bg-gradient-to-b from-slate-900 to-purple-900" />
       
       {/* Text Overlay */}
       <div className="absolute top-[15%] w-full flex justify-center z-10 px-4 pointer-events-none">
         <h1 
-            className="text-5xl md:text-7xl lg:text-8xl text-center font-['Great_Vibes'] animate-pulse"
+            className="text-5xl md:text-7xl lg:text-8xl text-center animate-pulse drop-shadow-2xl"
             style={{
-                color: '#fbcfe8', // pink-200
-                textShadow: '0 0 20px #be185d, 0 0 40px #db2777',
+                color: '#fce7f3', // pink-100
+                textShadow: '0 0 30px #db2777, 0 0 60px #be185d',
                 fontFamily: "'Great Vibes', cursive"
             }}
         >
